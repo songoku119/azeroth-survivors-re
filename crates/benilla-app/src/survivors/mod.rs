@@ -131,6 +131,7 @@ impl Plugin for SurvivorsPlugin {
                 (
                     hud::apply_ui_scale,
                     hud::touch_layout,
+                    input::prompts,
                     minimap::touch_targets,
                     hud::fill_art,
                     hud::xp_hover,

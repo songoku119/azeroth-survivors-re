@@ -781,7 +781,13 @@ pub(super) fn setup_hud(
                     ..default()
                 },
             ));
-            root.spawn(centered(f, "Click a card, or press 1, 2 or 3", 14.0, DIM));
+            root.spawn((
+                input::Prompt {
+                    key: "Click a card, or press 1, 2 or 3",
+                    touch: "Tap a card",
+                },
+                centered(f, "Click a card, or press 1, 2 or 3", 14.0, DIM),
+            ));
         });
 
     // --- Pause. ---
@@ -1353,6 +1359,7 @@ pub(super) fn refresh_hud(
     phase: Res<State<Phase>>,
     mut run: ResMut<Run>,
     selection: Res<Selection>,
+    input: Res<SurvivorsInput>,
     font: Res<HudFont>,
     mut texts: ParamSet<(
         Query<&mut Text, With<LevelText>>,
@@ -1424,10 +1431,15 @@ pub(super) fn refresh_hud(
         **t = title;
     }
     let summary = format!(
-        "{} {} in {}   —   press Enter to play again",
+        "{} {} in {}   —   {}",
         crate::char_select::race_name(run.race),
         run.class.name,
         selection.map_def().name,
+        input::prompt(
+            input.touch_active,
+            "press Enter to play again",
+            "tap Play again",
+        ),
     );
     if let Ok(mut t) = texts.p5().single_mut() {
         if **t != summary {
@@ -2419,8 +2431,11 @@ pub(super) fn icon_tooltip(
         TipFor::Mobility => run.mobility().map(|m| {
             vec![
                 TipLine::new(spell_name(spells.as_deref(), m.spell, m.name), Color::WHITE).header(),
-                TipLine::new("Press F", Color::WHITE)
-                    .right(format!("{} sec cooldown", num(m.cooldown)), Color::WHITE),
+                TipLine::new(
+                    input::prompt(input.touch_active, "Press F", "Tap to cast"),
+                    Color::WHITE,
+                )
+                .right(format!("{} sec cooldown", num(m.cooldown)), Color::WHITE),
                 TipLine::new(m.desc, GOLD),
             ]
         }),

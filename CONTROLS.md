@@ -26,8 +26,11 @@ preview hero. Your race, gender, class and zone are remembered across reloads.
 
 ## Touch
 
-The first touch switches the HUD to its touch layout (a key or mouse click switches it back); every
-on-screen button is at least 48 dp.
+On Android touch is the control scheme from launch: the HUD starts in its touch layout and stays
+there, every prompt says what to tap, and a Bluetooth keyboard or mouse still works silently. On
+the desktop and the web the first touch switches the HUD to its touch layout (a key or mouse click
+switches it back); `WOW_TOUCH=1` (`?touch=1` on the web) asks for the Android behaviour there too,
+and `WOW_TOUCH=0` turns it off on Android. Every on-screen button is at least 48 dp.
 
 | When | Touch | Action |
 |---|---|---|
@@ -39,6 +42,7 @@ on-screen button is at least 48 dp.
 | Playing | **II** button (top, left of the minimap) / Android **Back** | pause and resume |
 | Paused | **Camera** / **Picture polish** | what **C** and **G** do on a keyboard |
 | Level up | tap a card | pick an upgrade |
+| Game over | **Play again** | back to the menu |
 | Any | hold a finger on an ability icon or the XP bar | its tooltip / the numbers |
 | Menu | Android **Back** twice within 2 s | quit |
 

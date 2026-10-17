@@ -3,6 +3,11 @@
 //! bindings (`CONTROLS.md`) are the reference; touch is a second way to produce the same intents:
 //! a floating joystick under the first touch in the left part of the screen, a tap or drag on the
 //! right that aims, a two-finger pinch that zooms, and on-screen buttons for the rest.
+//!
+//! On Android the touch layout is the control scheme from launch ([`touch_first`]): the HUD
+//! starts in it and a key or button never switches it off, though every binding still works for
+//! a Bluetooth keyboard. Elsewhere the first touch switches the layout on and a key switches it
+//! back; `WOW_TOUCH=1` (`?touch=1` on the web) asks for touch-first there too.
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::input::mouse::{AccumulatedMouseMotion, MouseScrollUnit, MouseWheel};
@@ -24,8 +29,53 @@ pub(super) const LONG_PRESS_SECS: f32 = 0.4;
 /// How long the aim holds after the aiming finger lifts; then the hero faces where it runs.
 pub(super) const AIM_HOLD_SECS: f32 = 1.5;
 
+/// Whether the touch layout is the control scheme from the start and for good: on Android, or
+/// wherever `WOW_TOUCH=1` says so (`?touch=1` on the web); `WOW_TOUCH=0` turns it off on Android.
+pub(super) fn touch_first() -> bool {
+    touch_first_from(
+        cfg!(target_os = "android"),
+        crate::webenv::var("WOW_TOUCH").as_deref(),
+    )
+}
+
+/// The pure half of [`touch_first`]: the lever decides when set, the target otherwise. "0",
+/// "off", "false" and an empty value turn it off; anything else turns it on.
+pub(super) fn touch_first_from(android: bool, lever: Option<&str>) -> bool {
+    match lever.map(|v| v.trim().to_ascii_lowercase()) {
+        Some(v) => !matches!(v.as_str(), "" | "0" | "off" | "false" | "no"),
+        None => android,
+    }
+}
+
+/// The wording of a prompt for the layout: `key` names a key on the desktop layout, `touch`
+/// says what to tap on the touch layout, so no key is ever asked of a player who has none.
+pub(super) fn prompt<'a>(touch_active: bool, key: &'a str, touch: &'a str) -> &'a str {
+    if touch_active {
+        touch
+    } else {
+        key
+    }
+}
+
+/// A text node whose wording follows the layout; [`prompts`] keeps it at [`prompt`]'s pick.
+#[derive(Component)]
+pub(super) struct Prompt {
+    pub key: &'static str,
+    pub touch: &'static str,
+}
+
+/// Rewrites every [`Prompt`] text for the current layout; a write only on a real change.
+pub(super) fn prompts(input: Res<SurvivorsInput>, mut texts: Query<(&Prompt, &mut Text)>) {
+    for (p, mut text) in &mut texts {
+        let want = prompt(input.touch_active, p.key, p.touch);
+        if text.0 != want {
+            text.0 = want.to_string();
+        }
+    }
+}
+
 /// What the player asked for this frame.
-#[derive(Resource, Default)]
+#[derive(Resource)]
 pub(super) struct SurvivorsInput {
     /// Screen-relative, -1..1 per axis: up is `-y` as `W` is; the joystick gives a magnitude.
     pub mov: Vec2,
@@ -45,13 +95,35 @@ pub(super) struct SurvivorsInput {
     pub zoom: f32,
     /// A camera drag's delta in raw mouse units (or logical pixels for two fingers), while dragging.
     pub orbit: Vec2,
-    /// Latched by the first touch; a key or mouse button press clears it. The HUD shows the
-    /// on-screen controls while set.
+    /// Latched by the first touch; a key or mouse button press clears it, except under
+    /// [`touch_first`], where it starts set and stays so. The HUD shows the on-screen controls
+    /// while set.
     pub touch_active: bool,
     /// The joystick while a thumb holds it: its origin and the knob's point, logical pixels.
     pub joystick: Option<(Vec2, Vec2)>,
     /// Intents raised by UI systems later in the frame, taken by [`collect`] the next.
     pub queued: Queued,
+}
+
+impl Default for SurvivorsInput {
+    fn default() -> Self {
+        Self {
+            mov: Vec2::ZERO,
+            aim: None,
+            jump: false,
+            mobility: false,
+            pause: false,
+            back: false,
+            confirm: false,
+            camera_toggle: false,
+            grade_toggle: false,
+            zoom: 1.0,
+            orbit: Vec2::ZERO,
+            touch_active: touch_first(),
+            joystick: None,
+            queued: Queued::default(),
+        }
+    }
 }
 
 #[derive(Default, Clone, Copy)]
@@ -145,6 +217,19 @@ pub(super) fn in_stick_zone(x: f32, width: f32) -> bool {
     x < width * STICK_ZONE
 }
 
+/// Whether a touch at `physical` (physical pixels) lands on a UI node. A node under a hidden
+/// panel (`Visibility::Hidden`) fails `InheritedVisibility`; a `Display::None` node (a touch
+/// button on the desktop layout, a key hint on touch) keeps `InheritedVisibility`, so it is
+/// told by its laid-out size, zero as bevy_ui's own picking backend reads it.
+pub(super) fn node_hit(
+    node: &ComputedNode,
+    tf: &UiGlobalTransform,
+    vis: &InheritedVisibility,
+    physical: Vec2,
+) -> bool {
+    vis.get() && node.size() != Vec2::ZERO && node.contains_point(*tf, physical)
+}
+
 /// Fill [`SurvivorsInput`] for the frame.
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
 pub(super) fn collect(
@@ -222,12 +307,13 @@ pub(super) fn collect(
     if mouse.any_pressed([MouseButton::Left, MouseButton::Right]) {
         input.orbit = motion.delta;
     }
-    // A real key or button switches the HUD back to the desktop layout; Back is not one.
+    // A real key or button switches the HUD back to the desktop layout; Back is not one, and
+    // under touch-first nothing does: a Bluetooth keyboard works, silently.
     let keyed = keys
         .get_just_pressed()
         .any(|k| !matches!(k, KeyCode::Unidentified(_) | KeyCode::BrowserBack))
         || mouse.get_just_pressed().next().is_some();
-    if keyed && input.touch_active {
+    if keyed && input.touch_active && !touch_first() {
         input.touch_active = false;
         touch.last_aim = None;
     }
@@ -255,8 +341,7 @@ pub(super) fn collect(
         // `Interaction`, which follows the first touch only: a jump with a thumb on the stick.
         let hit = nodes
             .iter()
-            .filter(|(_, _, vis, _)| vis.get())
-            .filter(|(node, tf, _, _)| node.contains_point(**tf, physical))
+            .filter(|(node, tf, vis, _)| node_hit(node, tf, vis, physical))
             .max_by_key(|(node, ..)| node.stack_index());
         let role = if let Some((_, _, _, widget)) = hit {
             match widget {
@@ -417,6 +502,78 @@ mod tests {
         assert!((wheel_zoom(-1.0) - 1.12).abs() < 1e-6);
         assert_eq!(wheel_zoom(100.0), 0.5);
         assert_eq!(wheel_zoom(-100.0), 1.5);
+    }
+
+    #[test]
+    fn touch_first_lever_overrides_the_target() {
+        // No lever: the target decides.
+        assert!(touch_first_from(true, None));
+        assert!(!touch_first_from(false, None));
+        // The lever on, anywhere.
+        assert!(touch_first_from(false, Some("1")));
+        assert!(touch_first_from(false, Some("true")));
+        assert!(touch_first_from(false, Some(" yes ")));
+        // The lever off, even on Android.
+        for off in ["0", "off", "OFF", "false", "no", "", "  "] {
+            assert!(!touch_first_from(true, Some(off)), "{off:?}");
+        }
+    }
+
+    #[test]
+    fn prompt_picks_the_layout_wording() {
+        assert_eq!(
+            prompt(false, "press Enter", "tap Play again"),
+            "press Enter"
+        );
+        assert_eq!(
+            prompt(true, "press Enter", "tap Play again"),
+            "tap Play again"
+        );
+    }
+
+    #[test]
+    fn hidden_nodes_take_no_touch() {
+        // A `Display::None` node lays out at zero size: never a hit, whatever its visibility,
+        // even at its own centre, where `contains_point`'s rounded-rectangle test is nearest.
+        let none = ComputedNode::default();
+        let tf = UiGlobalTransform::from(bevy::math::Affine2::from_translation(Vec2::new(
+            100.0, 100.0,
+        )));
+        assert!(!node_hit(
+            &none,
+            &tf,
+            &InheritedVisibility::VISIBLE,
+            Vec2::new(100.0, 100.0)
+        ));
+        assert!(!node_hit(
+            &none,
+            &tf,
+            &InheritedVisibility::VISIBLE,
+            Vec2::new(101.0, 100.0)
+        ));
+        // A laid-out node is hit inside and not outside, and never while its panel is hidden.
+        let laid = ComputedNode {
+            size: Vec2::new(48.0, 48.0),
+            ..default()
+        };
+        assert!(node_hit(
+            &laid,
+            &tf,
+            &InheritedVisibility::VISIBLE,
+            Vec2::new(110.0, 90.0)
+        ));
+        assert!(!node_hit(
+            &laid,
+            &tf,
+            &InheritedVisibility::VISIBLE,
+            Vec2::new(130.0, 90.0)
+        ));
+        assert!(!node_hit(
+            &laid,
+            &tf,
+            &InheritedVisibility::HIDDEN,
+            Vec2::new(110.0, 90.0)
+        ));
     }
 
     #[test]
