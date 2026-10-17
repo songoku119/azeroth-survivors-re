@@ -6,6 +6,53 @@ the survivors mode. It is written for the people and agents who will do the work
 spirit as [UPSTREAM.md](UPSTREAM.md): what to touch, what not to touch, how to know a phase is
 done. Line numbers are as of `dd5e330`; re-check them after a sync.
 
+## Status
+
+What is on this branch, as of the first implementation pass. Everything below was written
+without an NDK, an SDK or a device at hand, so "verified" means a type check, a host-side unit
+test or a wasm check, never a link, an APK or a frame on a phone. The device-gated exits are
+listed last and are still open; P2 is still the go/no-go.
+
+**Implemented.**
+
+| phase | item | where |
+|---|---|---|
+| P0 | viewport meta on the dev page | `web/index.html` |
+| P1 | the launcher crate: `#[bevy_main]` cdylib (+ `rlib` for host tests), `run_survivors` as the desktop binary | `crates/warcraft-survivors-android/src/lib.rs` |
+| P1 | env shim: `BENILLA_HOME`, `WOW_DATA` (external files dir, then files dir), `WGPU_BACKEND=vulkan`, `env.toml` lines; the android half with the directories and the logcat panic hook | `crates/warcraft-survivors-android/src/{env_shim,android}.rs` |
+| P1 | `arboard` gate widened to `not(any(wasm32, android))` | `crates/benilla-app/Cargo.toml`, `textinput/clipboard.rs` |
+| P1 | 16 KB page-size link flag for `aarch64-linux-android` | `.cargo/config.toml` |
+| P1 | Gradle project: `MainActivity : GameActivity` (games-activity 4.4.0, android-activity 0.6.1's pin), keep-screen-on, Back kept from finishing the activity, `minSdk 29`/`targetSdk 34`, Vulkan 1.1 `uses-feature`, `sensorLandscape`, every runtime config change handled in place (`configChanges`), `arm64-v8a` only | `android/` |
+| P1 | setup (target, cargo-ndk, NDK r27+/r28 check, one `android-activity` in the lock) and build (`cargo ndk … -P 29`, `libc++_shared` and `LOAD` alignment checks, strip, Gradle) scripts; `make android-toolchain` / `make android` | `scripts/android-setup.sh`, `scripts/android-build.sh`, `Makefile` |
+| P2 | `WOW_MIP_DROP` on the decoded (no-BC) path, Android default 1 | `crates/benilla-assets/src/gpu_blp/mip_drop.rs`, one call in `gpu_blp.rs` |
+| P2 | the Mali-gate preset the shim seeds into `env.toml` on first run (`WOW_FARCLIP`, `WOW_RENDER_SCALE`, `WOW_MSAA`, clutter, aniso, `WOW_GRADE=0`, `WOW_FPS_CAP=30`, `WOW_MIP_DROP=1`), compiled into the launcher (`env_shim::DEFAULT_ENV_TOML`); `spellEffectLevel` is a `config.toml` CVar and is not seeded yet | `scripts/android-env.default.toml`, `android.rs` |
+| P2 | the frame cap, native only (`WOW_FPS_CAP`) | `crates/benilla-app/src/survivors/framecap.rs` |
+| P3 | `SurvivorsInput`: keyboard/mouse plus floating joystick, tap/drag aim, two-finger pinch and orbit, Back as Esc; the touch HUD layout at 48 dp from `UiScale`; CONTROLS.md "Touch" | `survivors/input.rs`, `hud.rs`, `hero.rs`, `minimap.rs`, `mobility.rs`, `grade.rs`, `CONTROLS.md` |
+| P4 | Route A (`adb push` into the app's external files folder) through the shim; the "No game data" panel with **Validate** (`Chain::open`) | shim, `survivors/nodata.rs` |
+| P5 | `WillSuspend` → pause, cameras off until the frame after `Resumed`, audio suspended; `Mixer::set_suspended` / `OutputBackend::set_suspended` | `survivors/lifecycle.rs`, `sound/mixer/suspend.rs`, `sound/output/suspend.rs` (+ a `suspended` field and one condition in `sound/output/mod.rs`) |
+| P5 | Back: `OnBackPressedCallback` on the Kotlin side, `enableOnBackInvokedCallback=false` | `android/` |
+| P6 | the `android` job in `check.yml` (setup-ndk r28c, cargo-ndk, the target check); README, AGENTS.md, UPSTREAM.md "Android carries" | `.github/workflows/check.yml`, docs |
+
+**Verified, and how.** Host `cargo check` of the new crate and its `env.toml` unit tests
+(including that the seeded preset parses); `cargo check -p warcraft-survivors` and the wasm check
+(`-p wenilla … --features webgpu`) unchanged; `cargo test` of the `gpu_blp` mip-drop tests and of
+`survivors::` (input math, frame cap cadence, lifecycle suspend/resume, minimap button
+geometry); `cargo clippy` with no new warnings in the touched files; and an `aarch64-linux-android`
+`cargo check` of `warcraft-survivors-android --no-default-features` with a stand-in for the NDK's
+clang (a zig `cc` shim for `CC_aarch64_linux_android` and a patched `android-activity` where
+the lock's version needed it), which types every crate for the target and links nothing. Not
+done here: a link through a real NDK, a Gradle build (no SDK, no Google Maven), an APK, a frame
+on a phone. The CI job is the first place the real NDK sees this code.
+
+**Still device-gated.** The P1 exit (a rendered Elwynn pick screen on both reference devices,
+the `blp:` support line in logcat); the whole of the P2 gate (30 fps for 10 minutes, RSS under
+1.5 GB, three runs without an OOM on the Mali device: the ASTC sidecar fallback is unwritten);
+P2's `onTrimMemory` log line; the P5 device checks (home → return ten times, a call mid-run, an
+AAudio disconnect arriving as `DeviceNotAvailable`/`StreamInvalidated`, `KEYCODE_BACK` reaching
+`input.rs` as `BrowserBack`); P4 Route B (all-files access and the on-phone folder picker);
+P6 release signing and the `targetSdk 35` decision. Until a device has run it, treat the port as
+unproven, and the README says so.
+
 ## Goal, scope, non-goals
 
 **Goal.** A sideloaded APK that boots the survivors mode (`benilla_app::run_survivors`,
@@ -202,6 +249,15 @@ sign-off and a line here.
 | `crates/benilla-assets/src/gpu_blp.rs:71-89` | `cfg(android)` mip-drop arm in the decode path |
 | `crates/benilla-app/src/sound/output/mod.rs` | at most one `cfg(android)` stop hook, if P5 finds no existing way to stop the stream |
 | `Cargo.toml` (bevy features) | `android-game-activity` by name at the 0.19 bump |
+
+What landed differs from the table in two places, signed off in the review below and recorded
+in UPSTREAM.md "Android carries" for the sync: the mip drop is a cfg-free `WOW_MIP_DROP` lever
+whose *default* is the `cfg(android)` (so the desktop A/B needs no rebuild), and the P5 stop is a
+cfg-free `OutputBackend::set_suspended` plus `Mixer::set_suspended` rather than a `cfg(android)`
+hook, since the browser takes the gate half of it too. The logic of both lives in new files
+(`gpu_blp/mip_drop.rs`, `sound/mixer/suspend.rs`, `sound/output/suspend.rs`); the upstream files
+carry only `mod` lines, the one call in `for_upload`, and the `suspended` field with its one
+condition in `OutputBackend::service`. All of it is inert off Android.
 
 A cfg-audit sweep (see roles) confirms before P1 that no other `cfg(not(target_arch = "wasm32"))`
 site assumes a desktop filesystem or `current_exe()` beyond what `BENILLA_HOME`/`WOW_DATA` cover.
@@ -405,3 +461,29 @@ manifest and signing tasks added; import v1 narrowed to `adb push` and all-files
 deferred; CI job given its own NDK setup; P0 WebGPU note corrected; optional suggestions folded in
 (Kotlin owner and device procurement, widget-over-zone precedence and pinch latch, Back key
 confirmation, desktop-side ASTC, provenance note).
+
+**First execution pass, reviewed on `claude/android-conversion-plan-7fj17k`** (the four tracks:
+launcher + Gradle + scripts, touch input and UI, lifecycle/no-data/frame cap/mip drop, CI and
+docs). Verdict "approve with changes", all applied in the review commit:
+
+- `input::collect` read Android's Back through `keys.just_pressed(..) || keyboard.read().any(..)`,
+  which short-circuits and leaves the `KeyboardInput` reader undrained on the frames the first
+  test matches; the same press was read again next frame, a double Back that exits at the menu.
+  The reader now drains every frame.
+- The Mali preset was documented as seeded into `env.toml` on first run, but nothing wrote it.
+  The launcher now compiles it in (`env_shim::DEFAULT_ENV_TOML`) and writes it when the file is
+  absent; a host test parses it. The `spellEffectLevel` seed is not done and is marked open.
+- The upstream-file churn was cut down: the mip-drop helpers and tests, `Mixer::set_suspended`
+  and `OutputBackend::set_suspended` moved into new child-module files, leaving `mod` lines, the
+  `for_upload` call, the `suspended` field and one condition in upstream files. The resume's
+  `Instant::now() - REOPEN_EVERY` became a `checked_sub`.
+- `crates/warcraft-survivors/Cargo.toml`'s added bevy `default_font` dependency was reverted:
+  the workspace's `default_platform` feature already carries `default_font`.
+- The manifest's `configChanges` widened to every change the native side can live through
+  (`uiMode`, `keyboard`, `smallestScreenSize`, `fontScale`, `navigation`, `locale`,
+  `layoutDirection`), so a keyboard, dark mode or font-scale change no longer recreates the activity.
+- Checked and kept: desktop input unchanged (WASD, wheel, drag-orbit, `F`, `C`, `G`, Esc, Enter
+  all route through `SurvivorsInput` with the same semantics; the joystick `pace` is 1 for keys
+  and for the normalized auto-runner), the frame cap native-only on `bevy::platform` time, the
+  lifecycle tests, the mip-drop math, `lib_name` = the cdylib, games-activity 4.4.0 matching
+  android-activity 0.6.1's README, the 16 KB flag and the build script's `LOAD` check, the CI job.
