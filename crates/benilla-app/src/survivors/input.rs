@@ -99,6 +99,8 @@ pub(super) struct SurvivorsInput {
     /// [`touch_first`], where it starts set and stays so. The HUD shows the on-screen controls
     /// while set.
     pub touch_active: bool,
+    /// [`touch_first`], read once when the resource is made: the lever never changes mid-run.
+    touch_first: bool,
     /// The joystick while a thumb holds it: its origin and the knob's point, logical pixels.
     pub joystick: Option<(Vec2, Vec2)>,
     /// Intents raised by UI systems later in the frame, taken by [`collect`] the next.
@@ -107,6 +109,7 @@ pub(super) struct SurvivorsInput {
 
 impl Default for SurvivorsInput {
     fn default() -> Self {
+        let first = touch_first();
         Self {
             mov: Vec2::ZERO,
             aim: None,
@@ -119,7 +122,8 @@ impl Default for SurvivorsInput {
             grade_toggle: false,
             zoom: 1.0,
             orbit: Vec2::ZERO,
-            touch_active: touch_first(),
+            touch_active: first,
+            touch_first: first,
             joystick: None,
             queued: Queued::default(),
         }
@@ -313,7 +317,7 @@ pub(super) fn collect(
         .get_just_pressed()
         .any(|k| !matches!(k, KeyCode::Unidentified(_) | KeyCode::BrowserBack))
         || mouse.get_just_pressed().next().is_some();
-    if keyed && input.touch_active && !touch_first() {
+    if keyed && input.touch_active && !input.touch_first {
         input.touch_active = false;
         touch.last_aim = None;
     }
