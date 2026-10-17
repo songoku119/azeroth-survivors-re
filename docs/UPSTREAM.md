@@ -100,6 +100,29 @@ The recurring ones and the rule for each:
 | `benilla-protocol/src/{auth,lib}.rs`, `world/{mod,reader,session,writer/mod}.rs`, `tests/auth.rs` | the awaited readers over `transport::Conn` | keep ours; upstream's edits there have been comment-only so far |
 | `AGENTS.md`, `README.md`, `.gitignore` | the fork's map and front page | keep ours; upstream's own map is `docs/METHOD.md` and `docs/MAP.md` |
 
+## Android carries
+
+The Android port (docs/ANDROID.md) lives in its own crate, `android/`, `scripts/android-*` and
+`benilla-app/src/survivors/` (this repository's own code), and reaches upstream's files only at
+the sites below. Each is a candidate conflict at the next sync; the rule for each is in the last
+column. Two of them are not `#[cfg]`-gated and compile on every target, which the plan did not
+foresee (its "Upstream touches" table allowed one `cfg(android)` arm each); they stay small and
+inert off Android, but a sync that rewrites the surrounding function reopens the question.
+
+| file | change | gated? | resolution |
+|---|---|---|---|
+| `benilla-app/Cargo.toml` | the `arboard` target edge widened: `cfg(not(any(target_arch = "wasm32", target_os = "android")))` | cfg (one line) | keep ours |
+| `benilla-app/src/textinput/clipboard.rs` | the three `cfg(not(target_arch = "wasm32"))` / `cfg(target_arch = "wasm32")` attributes on the `Pasteboard` impl and the `None =>` arms widened to `any(wasm32, android)`; Android takes the no-pasteboard arm | cfg (attributes only) | keep ours |
+| `benilla-app/src/sound/mixer.rs` | `Mixer::set_suspended(on)`: shuts the output gate and, under `cfg(not(wasm32))`, calls `OutputBackend::set_suspended`; called from `survivors/lifecycle.rs` on `AppLifecycle::WillSuspend`/`Resumed` | **no** (a new `pub(crate)` method, cfg inside) | keep ours; drop it if upstream grows a stop of its own |
+| `benilla-app/src/sound/output/mod.rs` | a `suspended: bool` on `OutputBackend`, `OutputBackend::set_suspended` (closes a `Running` stream, keeps `service` from reopening it, resets the retry clock on resume), one `!self.suspended &&` in `service`'s reopen condition | **no** (native-only file, no `cfg(android)`) | keep ours; take upstream's `service` body around the one condition |
+| `benilla-assets/src/gpu_blp.rs` | `WOW_MIP_DROP`: `mip_drop()`, `levels_to_drop`, `drop_top_mips` and the call in `for_upload`'s decode arm, plus two tests; only `DEFAULT_MIP_DROP` is `cfg(target_os = "android")` (1 there, 0 elsewhere) | **partly**: the lever and the math compile everywhere, the default is the cfg | keep ours; a desktop run is unchanged at the default 0 |
+| `.cargo/config.toml` | a `[target.aarch64-linux-android]` section with the 16 KB page-size link flag | new section, no cfg needed | keep ours |
+| `Cargo.lock` | `android_log-sys` (the launcher's logcat panic hook), the `default_font` feature on `warcraft-survivors`' bevy | lockfile | regenerate |
+
+`crates/warcraft-survivors/Cargo.toml` also changed (bevy's `default_font` for the no-data
+panel), but that launcher is this repository's, not upstream's. The generated list in "Where the
+conflicts will be" picks all of these up; this section is the explanation.
+
 ## Why a real merge matters
 
 Git resolves a merge against the last common ancestor. PR #7 was a real merge: `c3d8c1a0` has
