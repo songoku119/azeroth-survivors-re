@@ -14,6 +14,9 @@ dev = ["benilla-app/dev"]
 
 [dependencies]
 benilla-app = { path = "../benilla-app", default-features = false }
+# The "No game data" panel (`survivors/nodata.rs`) draws with Bevy's built-in font: every WoW
+# font is inside the archives it is reporting absent.
+bevy = { workspace = true, features = ["default_font"] }
 
 [build-dependencies]
 benilla-buildstamp = { path = "../benilla-buildstamp" }

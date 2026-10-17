@@ -276,6 +276,8 @@ pub(super) struct OutputBackend {
     overloads_seen: u64,
     /// Errors the report counts: stream lost / open failed, since launch.
     stream_errors: u64,
+    /// Set by [`Self::set_suspended`]: the stream stays closed and `service` does not reopen it.
+    suspended: bool,
 }
 
 impl Backend for OutputBackend {
@@ -298,6 +300,7 @@ impl Backend for OutputBackend {
                 pending: Vec::new(),
                 overloads_seen: 0,
                 stream_errors: 0,
+                suspended: false,
             },
             sample_rate,
         ))
@@ -378,7 +381,7 @@ impl OutputBackend {
             }
         }
         if let Stage::Idle { since, .. } = &self.stage {
-            if since.elapsed() >= REOPEN_EVERY {
+            if !self.suspended && since.elapsed() >= REOPEN_EVERY {
                 match device::default_output() {
                     Ok(device) => {
                         if let Some(event) = self.open(device) {
@@ -396,6 +399,27 @@ impl OutputBackend {
             }
         }
         (self.take_window(), events)
+    }
+
+    /// Close the stream and keep it closed (a backgrounded app plays nothing and holds no device),
+    /// or let the next `service` reopen it at once. Idempotent; a close that loses the ring
+    /// consumer is a `Dead` event like any other.
+    pub(super) fn set_suspended(&mut self, on: bool) -> Option<Event> {
+        if self.suspended == on {
+            return None;
+        }
+        self.suspended = on;
+        if on {
+            if matches!(self.stage, Stage::Running { .. }) {
+                if let Err(e) = self.close() {
+                    self.stage = Stage::Dead;
+                    return Some(Event::Dead(format!("{e:#}")));
+                }
+            }
+        } else if let Stage::Idle { since, .. } = &mut self.stage {
+            *since = Instant::now() - REOPEN_EVERY;
+        }
+        None
     }
 
     /// Open a stream on `device` with the ring consumer held in `Stage::Idle`; on failure the
