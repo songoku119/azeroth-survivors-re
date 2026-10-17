@@ -27,9 +27,22 @@ pub fn prepare() {
 
     let home = internal.join("benilla-config");
     if let Err(e) = fs::create_dir_all(&home) {
-        log(LogPriority::WARN, &format!("cannot create {}: {e}", home.display()));
+        log(
+            LogPriority::WARN,
+            &format!("cannot create {}: {e}", home.display()),
+        );
     }
-    let env_toml = fs::read_to_string(home.join("env.toml")).unwrap_or_default();
+    // First run: seed the preset, which the player edits from then on (`adb shell run-as`).
+    let env_path = home.join("env.toml");
+    if !env_path.exists() {
+        if let Err(e) = fs::write(&env_path, env_shim::DEFAULT_ENV_TOML) {
+            log(
+                LogPriority::WARN,
+                &format!("cannot seed {}: {e}", env_path.display()),
+            );
+        }
+    }
+    let env_toml = fs::read_to_string(&env_path).unwrap_or_default();
     let data = env_shim::data_dir(&internal, external.as_deref(), |p| p.is_dir());
     let vars = env_shim::variables(&home, &data, &env_toml, |k| std::env::var_os(k).is_some());
     for (key, value) in vars {

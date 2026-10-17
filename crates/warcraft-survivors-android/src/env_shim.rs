@@ -8,6 +8,10 @@
 
 use std::path::{Path, PathBuf};
 
+/// The preset [`crate`]'s android half writes to `env.toml` when the file does not exist yet:
+/// the P2 starting point (docs/ANDROID.md), edited in the repository, not here.
+pub const DEFAULT_ENV_TOML: &str = include_str!("../../../scripts/android-env.default.toml");
+
 /// Parse `KEY = "value"` lines. `#` comments and blank lines are skipped, quotes around the
 /// value are optional, a line without `=` or with an empty key is ignored. Later lines win over
 /// earlier ones for the same key.
@@ -63,7 +67,11 @@ fn unquote(value: &str) -> String {
 
 /// Where the `Data` folder is looked for: `<external>/Data` when it exists (that is where
 /// `adb push` and the on-phone folder picker put it), else `<internal>/Data`.
-pub fn data_dir(internal: &Path, external: Option<&Path>, exists: impl Fn(&Path) -> bool) -> PathBuf {
+pub fn data_dir(
+    internal: &Path,
+    external: Option<&Path>,
+    exists: impl Fn(&Path) -> bool,
+) -> PathBuf {
     if let Some(external) = external {
         let candidate = external.join("Data");
         if exists(&candidate) {
@@ -86,7 +94,10 @@ pub fn variables(
     let mut vars = parse_env_toml(env_toml);
     vars.retain(|(k, _)| k != "BENILLA_HOME");
     let has = |vars: &[(String, String)], key: &str| vars.iter().any(|(k, _)| k == key);
-    vars.push(("BENILLA_HOME".to_string(), home.to_string_lossy().into_owned()));
+    vars.push((
+        "BENILLA_HOME".to_string(),
+        home.to_string_lossy().into_owned(),
+    ));
     if !has(&vars, "WOW_DATA") {
         vars.push(("WOW_DATA".to_string(), data.to_string_lossy().into_owned()));
     }
@@ -158,8 +169,23 @@ mod tests {
     }
 
     #[test]
+    fn the_seeded_preset_parses() {
+        let vars = parse_env_toml(DEFAULT_ENV_TOML);
+        assert_eq!(get(&vars, "WOW_FPS_CAP"), Some("30"));
+        assert_eq!(get(&vars, "WOW_MIP_DROP"), Some("1"));
+        assert!(
+            vars.iter().all(|(k, _)| k.starts_with("WOW_")),
+            "only client levers: {vars:?}"
+        );
+        // The preset never pins the data folder or the backend; the shim's defaults fill them.
+        assert_eq!(get(&vars, "WOW_DATA"), None);
+    }
+
+    #[test]
     fn a_backend_already_in_the_process_is_kept() {
-        let vars = variables(Path::new("/h"), Path::new("/d"), "", |k| k == "WGPU_BACKEND");
+        let vars = variables(Path::new("/h"), Path::new("/d"), "", |k| {
+            k == "WGPU_BACKEND"
+        });
         assert_eq!(get(&vars, "WGPU_BACKEND"), None);
     }
 }

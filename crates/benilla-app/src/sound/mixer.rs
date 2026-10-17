@@ -26,6 +26,9 @@ use kira::sound::FromFileError;
 use kira::track::{SendTrackBuilder, SendTrackHandle, SpatialTrackBuilder};
 use kira::{AudioManager, AudioManagerSettings, Decibels, Mix, Tween};
 
+// Ours: the backgrounded app's stop (docs/UPSTREAM.md, "Android carries").
+mod suspend;
+
 use super::limiter;
 use super::meter::{self, LevelReading, MixLevel};
 use super::output::Window;
@@ -330,18 +333,6 @@ impl Mixer {
             },
             glide(),
         );
-    }
-
-    /// Suspend or resume the output, the backgrounded app's stop: the gate shuts (a de-click,
-    /// the stream closes right after) and the device stream closes until the resume, so nothing
-    /// plays and no device is held. The browser has no stream of its own to close, so there the
-    /// gate is the whole of it.
-    pub(crate) fn set_suspended(&mut self, on: bool) {
-        self.set_output_gate(!on);
-        #[cfg(not(target_arch = "wasm32"))]
-        if let Some(event) = self.manager.backend_mut().set_suspended(on) {
-            error!("audio: output is gone for good — {event:?}");
-        }
     }
 
     /// Arm or bypass the output limiter (`SoundOutputLimiter`); its delay line runs either way,

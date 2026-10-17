@@ -201,12 +201,14 @@ pub(super) fn collect(
     input.camera_toggle |= keys.just_pressed(KeyCode::KeyC);
     input.grade_toggle |= keys.just_pressed(KeyCode::KeyG);
     // Android's Back comes as a `BrowserBack` logical key, its physical code unidentified on some
-    // devices and `BrowserBack` on others.
-    let back = keys.just_pressed(KeyCode::BrowserBack)
-        || keyboard.read().any(|k| {
-            k.state == ButtonState::Pressed && !k.repeat && k.logical_key == Key::BrowserBack
-        });
-    if back {
+    // devices and `BrowserBack` on others. The reader drains every frame, whichever matched: an
+    // event left unread would be read again next frame, a second Back that exits at the menu.
+    let mut logical_back = false;
+    for k in keyboard.read() {
+        logical_back |=
+            k.state == ButtonState::Pressed && !k.repeat && k.logical_key == Key::BrowserBack;
+    }
+    if keys.just_pressed(KeyCode::BrowserBack) || logical_back {
         input.back = true;
         input.pause = true;
     }

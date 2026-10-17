@@ -12,7 +12,10 @@ use bevy::prelude::*;
 pub(super) fn plugin(app: &mut App) {
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(cap) = native::from_env() {
-        info!("framecap: WOW_FPS_CAP={} — {:?} per frame", cap.hz, cap.period);
+        info!(
+            "framecap: WOW_FPS_CAP={} — {:?} per frame",
+            cap.hz, cap.period
+        );
         app.insert_resource(cap).add_systems(Last, native::limit);
     }
     #[cfg(target_arch = "wasm32")]

@@ -1,7 +1,7 @@
 # The Android preset: what the launcher's env shim seeds into `<filesDir>/benilla-config/env.toml`
-# on first run (docs/ANDROID.md, P1 "Env shim" and P2 "Presets"). Every key is a `WOW_*` lever the
-# client already reads off its process environment at startup, so the shim does `set_var` per line
-# and no client code knows it is on a phone. The values are the P2 starting point for the Mali
+# on first run, compiled in as `env_shim::DEFAULT_ENV_TOML` (docs/ANDROID.md, P1 "Env shim" and P2
+# "Presets"). Every key is a `WOW_*` lever the client already reads off its process environment at
+# startup, so the shim does `set_var` per line and no client code knows it is on a phone. The values are the P2 starting point for the Mali
 # gate (30 fps for 10 minutes in Elwynn and Naxxramas, RSS under 1.5 GB); a High preset lifts them.
 #
 # The readers, for the names and the units:
@@ -30,8 +30,8 @@ WOW_FPS_CAP = "30"
 WOW_MIP_DROP = "1"
 
 # `spellEffectLevel` has no env lever: it is a `config.toml` CVar (`benilla-app/src/cvars/table.rs`,
-# registered "2"; the handler's levels are 0, 1, 2 for 0.33/0.66/1.0 emission). The shim seeds it
-# into `<filesDir>/benilla-config/config.toml` on first run, where the player's panel can raise it:
+# registered "2"; the handler's levels are 0, 1, 2 for 0.33/0.66/1.0 emission). The shim does not
+# seed it yet (open in docs/ANDROID.md); by hand, in `<filesDir>/benilla-config/config.toml`:
 #
 #   [cvars]
 #   spellEffectLevel = "1"

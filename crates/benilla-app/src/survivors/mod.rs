@@ -42,7 +42,12 @@ impl Plugin for SurvivorsPlugin {
     fn build(&self, app: &mut App) {
         // Present before `OnEnter(InWorld)`, where the UI lifecycle decides not to load FrameXML.
         app.insert_resource(crate::run_mode::CaptureMode)
-            .add_plugins((grade::plugin, lifecycle::plugin, framecap::plugin, nodata::plugin))
+            .add_plugins((
+                grade::plugin,
+                lifecycle::plugin,
+                framecap::plugin,
+                nodata::plugin,
+            ))
             .init_state::<Phase>()
             .init_resource::<Rng>()
             .init_resource::<Selection>()

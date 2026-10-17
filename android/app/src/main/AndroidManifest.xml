@@ -11,7 +11,10 @@
         android:name="android.hardware.touchscreen"
         android:required="true" />
 
-    <!-- No largeHeap: it governs the Java heap, and the client's allocations are native.
+    <!-- configChanges below lists every change the native side can live through: an unlisted one
+         (a keyboard plugged in, dark mode, a font-scale change) recreates the activity, which
+         android-activity cannot hand to a running Bevy app.
+         No largeHeap: it governs the Java heap, and the client's allocations are native.
          enableOnBackInvokedCallback=false keeps Back on the onBackPressed path, where
          MainActivity's callback stops it from finishing the activity. -->
     <application
@@ -25,7 +28,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="sensorLandscape"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|density">
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|fontScale|navigation|density">
 
             <!-- The cdylib GameActivity dlopens: crates/warcraft-survivors-android's [lib] name. -->
             <meta-data

@@ -7437,7 +7437,6 @@ version = "0.2.0"
 dependencies = [
  "benilla-app",
  "benilla-buildstamp",
- "bevy",
 ]
 
 [[package]]

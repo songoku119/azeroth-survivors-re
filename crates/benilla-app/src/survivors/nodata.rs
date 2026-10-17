@@ -6,8 +6,8 @@
 //! `Chain::open` on the folder and shows the first error verbatim.
 //!
 //! Plain `bevy_ui`, not the glue widgets: those are drawn from the very archives that are
-//! missing. The text takes Bevy's built-in font (`TextFont::default()`, the `default_font`
-//! feature the `warcraft-survivors` binary turns on), since `Fonts/FRIZQT__.ttf` is in `fonts.MPQ`.
+//! missing. The text takes Bevy's built-in font (`TextFont::default()`; `default_font` comes with
+//! the workspace's `default_platform` bevy feature), since `Fonts/FRIZQT__.ttf` is in `fonts.MPQ`.
 //!
 //! The `mpq://` source registers before `AssetPlugin` builds (`crate::run`), so a folder that
 //! validates needs a restart to be read: the panel says so.
@@ -69,6 +69,7 @@ fn text(s: impl Into<String>, size: f32, color: Color) -> impl Bundle {
 }
 
 /// Build the panel into [`MenuRoot`] when `Startup` left no `WorldAssets` behind.
+#[allow(clippy::type_complexity)]
 fn build_panel(
     mut commands: Commands,
     roots: Query<Entity, (With<MenuRoot>, Without<MenuBuilt>, Without<NoDataBuilt>)>,
@@ -139,8 +140,12 @@ fn build_panel(
 }
 
 /// Validate: re-run the probe and show its line.
+#[allow(clippy::type_complexity)]
 fn validate(
-    mut buttons: Query<(&Interaction, &mut BackgroundColor), (Changed<Interaction>, With<ValidateButton>)>,
+    mut buttons: Query<
+        (&Interaction, &mut BackgroundColor),
+        (Changed<Interaction>, With<ValidateButton>),
+    >,
     mut status: Query<&mut Text, With<StatusText>>,
 ) {
     for (interaction, mut bg) in &mut buttons {

@@ -35,6 +35,8 @@ mod device;
 #[cfg(not(target_os = "macos"))]
 #[path = "cpal.rs"]
 mod device;
+// Ours: the backgrounded app's stop (docs/UPSTREAM.md, "Android carries").
+mod suspend;
 
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -399,27 +401,6 @@ impl OutputBackend {
             }
         }
         (self.take_window(), events)
-    }
-
-    /// Close the stream and keep it closed (a backgrounded app plays nothing and holds no device),
-    /// or let the next `service` reopen it at once. Idempotent; a close that loses the ring
-    /// consumer is a `Dead` event like any other.
-    pub(super) fn set_suspended(&mut self, on: bool) -> Option<Event> {
-        if self.suspended == on {
-            return None;
-        }
-        self.suspended = on;
-        if on {
-            if matches!(self.stage, Stage::Running { .. }) {
-                if let Err(e) = self.close() {
-                    self.stage = Stage::Dead;
-                    return Some(Event::Dead(format!("{e:#}")));
-                }
-            }
-        } else if let Stage::Idle { since, .. } = &mut self.stage {
-            *since = Instant::now() - REOPEN_EVERY;
-        }
-        None
     }
 
     /// Open a stream on `device` with the ring consumer held in `Stage::Idle`; on failure the

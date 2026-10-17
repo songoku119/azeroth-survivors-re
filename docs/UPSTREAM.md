@@ -105,23 +105,26 @@ The recurring ones and the rule for each:
 The Android port (docs/ANDROID.md) lives in its own crate, `android/`, `scripts/android-*` and
 `benilla-app/src/survivors/` (this repository's own code), and reaches upstream's files only at
 the sites below. Each is a candidate conflict at the next sync; the rule for each is in the last
-column. Two of them are not `#[cfg]`-gated and compile on every target, which the plan did not
-foresee (its "Upstream touches" table allowed one `cfg(android)` arm each); they stay small and
-inert off Android, but a sync that rewrites the surrounding function reopens the question.
+column. The logic sits in new files (`sound/mixer/suspend.rs`, `sound/output/suspend.rs`,
+`gpu_blp/mip_drop.rs`, child modules so they reach private fields), so upstream files carry
+only the lines listed. Two sites are not `#[cfg]`-gated, which the plan did not foresee (its
+"Upstream touches" table allowed one `cfg(android)` arm each). The review accepted them
+ungated: a gate would add more upstream lines than it removes, the browser takes the gate half
+of the suspend, and both are inert off Android.
 
 | file | change | gated? | resolution |
 |---|---|---|---|
 | `benilla-app/Cargo.toml` | the `arboard` target edge widened: `cfg(not(any(target_arch = "wasm32", target_os = "android")))` | cfg (one line) | keep ours |
 | `benilla-app/src/textinput/clipboard.rs` | the three `cfg(not(target_arch = "wasm32"))` / `cfg(target_arch = "wasm32")` attributes on the `Pasteboard` impl and the `None =>` arms widened to `any(wasm32, android)`; Android takes the no-pasteboard arm | cfg (attributes only) | keep ours |
-| `benilla-app/src/sound/mixer.rs` | `Mixer::set_suspended(on)`: shuts the output gate and, under `cfg(not(wasm32))`, calls `OutputBackend::set_suspended`; called from `survivors/lifecycle.rs` on `AppLifecycle::WillSuspend`/`Resumed` | **no** (a new `pub(crate)` method, cfg inside) | keep ours; drop it if upstream grows a stop of its own |
-| `benilla-app/src/sound/output/mod.rs` | a `suspended: bool` on `OutputBackend`, `OutputBackend::set_suspended` (closes a `Running` stream, keeps `service` from reopening it, resets the retry clock on resume), one `!self.suspended &&` in `service`'s reopen condition | **no** (native-only file, no `cfg(android)`) | keep ours; take upstream's `service` body around the one condition |
-| `benilla-assets/src/gpu_blp.rs` | `WOW_MIP_DROP`: `mip_drop()`, `levels_to_drop`, `drop_top_mips` and the call in `for_upload`'s decode arm, plus two tests; only `DEFAULT_MIP_DROP` is `cfg(target_os = "android")` (1 there, 0 elsewhere) | **partly**: the lever and the math compile everywhere, the default is the cfg | keep ours; a desktop run is unchanged at the default 0 |
+| `benilla-app/src/sound/mixer.rs` | one `mod suspend;` line; `Mixer::set_suspended(on)` itself is in `sound/mixer/suspend.rs` (shuts the output gate and, under `cfg(not(wasm32))`, calls `OutputBackend::set_suspended`), called from `survivors/lifecycle.rs` on `AppLifecycle::WillSuspend`/`WillResume` | no (a `mod` line) | keep ours; drop it if upstream grows a stop of its own |
+| `benilla-app/src/sound/output/mod.rs` | one `mod suspend;` line, a `suspended: bool` on `OutputBackend` (declared and initialised `false`), one `!self.suspended &&` in `service`'s reopen condition; `OutputBackend::set_suspended` (closes a `Running` stream, resets the retry clock on resume) is in `sound/output/suspend.rs` | **no**: inert while `suspended` is false, which it always is off Android | keep ours; take upstream's `service` body around the one condition |
+| `benilla-assets/src/gpu_blp.rs` | one `mod mip_drop;` line and the call in `for_upload`'s decode arm; `WOW_MIP_DROP` (`mip_drop()`, `levels_to_drop`, `drop_top_mips`, tests) is in `gpu_blp/mip_drop.rs`, where only `DEFAULT_MIP_DROP` is `cfg(target_os = "android")` (1 there, 0 elsewhere) | **partly**: the call is ungated, the default is the cfg | keep ours; a desktop run is unchanged at the default 0 |
 | `.cargo/config.toml` | a `[target.aarch64-linux-android]` section with the 16 KB page-size link flag | new section, no cfg needed | keep ours |
-| `Cargo.lock` | `android_log-sys` (the launcher's logcat panic hook), the `default_font` feature on `warcraft-survivors`' bevy | lockfile | regenerate |
+| `Cargo.lock` | the `warcraft-survivors-android` package (`android_log-sys` for the logcat panic hook is already in the lock through `bevy_log`) | lockfile | regenerate |
 
-`crates/warcraft-survivors/Cargo.toml` also changed (bevy's `default_font` for the no-data
-panel), but that launcher is this repository's, not upstream's. The generated list in "Where the
-conflicts will be" picks all of these up; this section is the explanation.
+The no-data panel's built-in font needs no manifest change: `default_font` comes with the
+workspace's `default_platform` bevy feature. The generated list in "Where the conflicts will be"
+picks all of these up; this section is the explanation.
 
 ## Why a real merge matters
 

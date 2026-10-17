@@ -84,7 +84,9 @@ fn lifecycle(
             return;
         }
         let Suspended {
-            cameras: off, down, resume_in,
+            cameras: off,
+            down,
+            resume_in,
         } = &mut *state;
         for entity in off.drain(..) {
             if let Ok((_, mut camera)) = cameras.get_mut(entity) {
@@ -130,7 +132,10 @@ mod tests {
             .resource_mut::<NextState<Phase>>()
             .set(Phase::Playing);
         app.update();
-        assert_eq!(*app.world().resource::<State<Phase>>().get(), Phase::Playing);
+        assert_eq!(
+            *app.world().resource::<State<Phase>>().get(),
+            Phase::Playing
+        );
 
         app.world_mut().write_message(AppLifecycle::WillSuspend);
         app.update();
@@ -144,7 +149,10 @@ mod tests {
         app.update();
         app.world_mut().write_message(AppLifecycle::WillResume);
         app.update();
-        assert!(!active(&app, on), "not yet: the surface is rebuilt this frame");
+        assert!(
+            !active(&app, on),
+            "not yet: the surface is rebuilt this frame"
+        );
         app.update();
         assert!(active(&app, on), "the frame after the resume");
         assert!(!active(&app, off), "a camera that was off stays off");
