@@ -1,0 +1,90 @@
+# Builds the Android APK (docs/ANDROID.md) and attaches it to a GitHub Release.
+#
+# Push a tag `android-v*` (or run it by hand) and this builds scripts/android-build.sh on a hosted
+# runner: rust + aarch64-linux-android, NDK r28c, the SDK (platform 34), Gradle 8.14.3. The APK is
+# debug-signed (Gradle's per-runner debug key), so an install from one release cannot be upgraded
+# in place by the next: uninstall first. It carries no game data; the player supplies their own
+# 1.12.1 Data folder (README, "Play it on Android").
+name: android-release
+on:
+  push:
+    tags: ['android-v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: release tag to create or update (e.g. android-v0.2.0)
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+      # A release build of bevy and the engine needs more than the runner's free ~14 GB.
+      - name: free disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: rust toolchain
+        run: |
+          rustup show active-toolchain || rustup toolchain install
+          rustup target add aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: android-release
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r28c
+          link-to-sdk: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-34 build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.14.3'
+      - name: cargo-ndk
+        run: command -v cargo-ndk || cargo install cargo-ndk --locked
+      - name: build (scripts/android-build.sh)
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+          CARGO_PROFILE_RELEASE_DEBUG: 0
+        run: scripts/android-build.sh
+      - name: name the APK
+        run: |
+          mkdir -p dist
+          cp android/app/build/outputs/apk/debug/app-debug.apk "dist/azeroth-survivors-${TAG}-arm64.apk"
+          sha256sum dist/*.apk | tee dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: dist/
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Azeroth Survivors for Android ${{ env.TAG }}
+          prerelease: true
+          files: dist/*
+          body: |
+            Experimental Android build (arm64, Android 10+, Vulkan 1.1 GPU). Not yet tested on a device.
+
+            **No game data is included.** Supply your own WoW 1.12.1 `Data` folder:
+            ```
+            adb install azeroth-survivors-${{ env.TAG }}-arm64.apk
+            adb push /path/to/WoW/Data /sdcard/Android/data/io.github.songoku119.azerothsurvivors/files/Data
+            ```
+            Touch controls: left thumb moves, tap or drag on the right to aim, on-screen spell, jump and pause buttons, Back pauses.
+            The APK is debug-signed; uninstall the previous build before installing a new one.
+            Crash logs: `adb logcat -s wsurvivors:* wgpu:*`.

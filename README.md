@@ -74,6 +74,26 @@ See [CONTROLS.md](CONTROLS.md). The short version: **WASD** to move, **Space** t
 for your class's movement spell, the **mouse wheel** to zoom, **C** to unlock the camera, **Esc**
 to pause, **1/2/3** to pick a level-up card.
 
+## Play it on Android
+
+**Experimental, untested on a device.** The Android build (docs/ANDROID.md) is a sideloaded
+APK of the survivors mode, touch-controlled (CONTROLS.md, "Touch"), that reads a WoW 1.12.1
+`Data` folder you put on the phone yourself. It ships no data and is on no store. Nothing here
+has yet been run on a real phone; the Rust side type-checks for the Android target in CI, the
+APK itself is yours to build and try.
+
+```bash
+export ANDROID_NDK_HOME=$ANDROID_HOME/ndk/<r28 or newer>   # Android Studio's SDK Manager installs one
+make android-toolchain   # rustup target, cargo-ndk; checks the NDK and the lockfile
+make android             # → android/app/build/outputs/apk/debug/app-debug.apk (needs an SDK, platform 34)
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+adb push wow-data/Data /sdcard/Android/data/io.github.songoku119.azerothsurvivors/files/Data
+```
+
+The app looks for `Data` in its own external files folder (the `adb push` above, no permission
+needed) and says what is missing when it finds none. Vulkan 1.1 and Android 10+ (arm64) are
+required; `adb logcat -s wsurvivors:* wgpu:*` is where it reports.
+
 ## The game data (not in this repo)
 
 This repo ships **no Blizzard content** — no art, models, sounds, maps, MPQ contents, or

@@ -9,12 +9,16 @@ mod auto;
 mod cards;
 mod data;
 mod enemies;
+mod framecap;
 mod grade;
 mod hero;
 mod hud;
+mod input;
+mod lifecycle;
 mod menu;
 mod minimap;
 mod mobility;
+mod nodata;
 mod units;
 
 use benilla_world::schedule::WorldStage;
@@ -38,11 +42,17 @@ impl Plugin for SurvivorsPlugin {
     fn build(&self, app: &mut App) {
         // Present before `OnEnter(InWorld)`, where the UI lifecycle decides not to load FrameXML.
         app.insert_resource(crate::run_mode::CaptureMode)
-            .add_plugins(grade::plugin)
+            .add_plugins((
+                grade::plugin,
+                lifecycle::plugin,
+                framecap::plugin,
+                nodata::plugin,
+            ))
             .init_state::<Phase>()
             .init_resource::<Rng>()
             .init_resource::<Selection>()
             .init_resource::<Run>()
+            .init_resource::<input::SurvivorsInput>()
             .init_resource::<hero::CamRig>()
             .init_resource::<hero::AimPoint>()
             .init_resource::<abilities::PendingHits>()
@@ -54,9 +64,11 @@ impl Plugin for SurvivorsPlugin {
             .add_plugins(bevy::ui_render::UiMaterialPlugin::<hud::SweepUiMaterial>::default())
             .add_systems(Startup, hud::setup_hud)
             .add_systems(Update, hero::daylight)
+            // The frame's intents first (`input::collect`), then everything that reads them.
             .add_systems(
                 Update,
                 (
+                    input::collect,
                     hero::aim_cursor,
                     mobility::cast_mobility,
                     hero::drive_hero,
@@ -108,6 +120,7 @@ impl Plugin for SurvivorsPlugin {
                     hud::fill_icons,
                     hud::update_cooldown_sweeps,
                     hud::refresh_mobility,
+                    hud::refresh_toggles,
                     hud::show_panels,
                 )
                     .chain()
@@ -117,6 +130,9 @@ impl Plugin for SurvivorsPlugin {
                 Update,
                 (
                     hud::apply_ui_scale,
+                    hud::touch_layout,
+                    input::prompts,
+                    minimap::touch_targets,
                     hud::fill_art,
                     hud::xp_hover,
                     hud::icon_tooltip,
